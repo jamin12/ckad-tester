@@ -1,58 +1,47 @@
-import type { CoreV1Api, Exec } from '@kubernetes/client-node';
+import type { CoreV1Api } from '@kubernetes/client-node';
+import { randomBytes } from 'node:crypto';
 import { SERVER_CONFIG } from '../config.js';
-import { execCommand } from '../verification/execCommand.js';
 
 const SECRET_NAME = 'ckad-workspace-kubeconfig';
-const WORKSPACE_RUNTIME_ANNOTATION = 'ckad-tester/runtime-version';
-const WORKSPACE_RUNTIME_VERSION = '2026-02-vim-required-v2';
-type RecreateReason = 'not-ready' | 'runtime-version-mismatch' | 'pod-not-found';
+const POD_LABEL = 'app=ckad-workspace';
 
-export async function ensureWorkspacePod(
+export async function createWorkspacePod(
   coreApi: CoreV1Api,
-  exec: Exec,
   namespace: string,
   kubeconfig: string,
+  activePodNames: Set<string>,
 ): Promise<string> {
-  const podName = `${SERVER_CONFIG.workspacePodPrefix}-session`;
-
-  // kubeconfig Secret 생성/갱신
   await ensureKubeconfigSecret(coreApi, namespace, kubeconfig);
 
+  // 1) 기존 ready pod 재사용 시도 + orphan 정리
   try {
-    const pod = await coreApi.readNamespacedPod({ name: podName, namespace });
-    const containerStatus = pod.status?.containerStatuses?.[0];
-    const runtimeVersion = pod.metadata?.annotations?.[WORKSPACE_RUNTIME_ANNOTATION];
-    const isReady = pod.status?.phase === 'Running' && containerStatus?.ready === true;
-    const runtimeMatches = runtimeVersion === WORKSPACE_RUNTIME_VERSION;
-    if (isReady && runtimeMatches) {
-      const editorsReady = await hasRequiredEditors(exec, namespace, podName);
-      if (editorsReady) {
-        return podName;
+    const list = await coreApi.listNamespacedPod({ namespace, labelSelector: POD_LABEL });
+    for (const pod of list.items) {
+      const name = pod.metadata?.name;
+      if (!name) continue;
+
+      const workspaceStatus = pod.status?.containerStatuses?.find((c) => c.name === 'workspace');
+      const isReady = workspaceStatus?.ready === true;
+
+      if (isReady) {
+        console.info(`[workspace-pod] reusing existing pod ${name}`);
+        return name;
       }
-      console.info(
-        `[workspace-pod] recreating ${podName} (reason=runtime-version-mismatch, detail=editors-missing)`,
-      );
-    }
 
-    const reason: RecreateReason = isReady ? 'runtime-version-mismatch' : 'not-ready';
-    console.info(
-      `[workspace-pod] recreating ${podName} (reason=${reason}, phase=${pod.status?.phase ?? 'unknown'}, ready=${String(containerStatus?.ready ?? false)}, runtimeVersion=${runtimeVersion ?? 'none'})`,
-    );
-
-    try {
-      await coreApi.deleteNamespacedPod({ name: podName, namespace, gracePeriodSeconds: 0 });
-    } catch {
-      // 이미 삭제 중이거나 없음
+      // ready가 아니고 다른 세션이 사용 중이 아닌 pod → orphan, 삭제
+      if (!activePodNames.has(name)) {
+        console.info(`[workspace-pod] cleaning orphan pod ${name}`);
+        coreApi.deleteNamespacedPod({ name, namespace, gracePeriodSeconds: 0 }).catch(() => {});
+      }
     }
-    await waitForPodGone(coreApi, namespace, podName);
-  } catch (err) {
-    if (isNotFoundError(err)) {
-      const reason: RecreateReason = 'pod-not-found';
-      console.info(`[workspace-pod] creating ${podName} (reason=${reason})`);
-    } else {
-      throw err;
-    }
+  } catch {
+    // list 실패 시 무시하고 새로 생성
   }
+
+  // 2) 새 pod 생성
+  const suffix = randomBytes(4).toString('hex');
+  const podName = `${SERVER_CONFIG.workspacePodPrefix}-${suffix}`;
+  console.info(`[workspace-pod] creating new pod ${podName}`);
 
   await coreApi.createNamespacedPod({
     namespace,
@@ -60,7 +49,7 @@ export async function ensureWorkspacePod(
       metadata: {
         name: podName,
         labels: { app: 'ckad-workspace' },
-        annotations: { [WORKSPACE_RUNTIME_ANNOTATION]: WORKSPACE_RUNTIME_VERSION },
+        annotations: { 'sidecar.istio.io/inject': 'false' },
       },
       spec: {
         initContainers: [
@@ -78,13 +67,12 @@ export async function ensureWorkspacePod(
             name: 'workspace',
             image: SERVER_CONFIG.workspacePodImage,
             command: ['sh', '-c',
-              'set -eu'
-              + ' && cp /tools/kubectl /usr/local/bin/kubectl'
-              + ' && chmod +x /usr/local/bin/kubectl'
-              + ' && apt-get update -qq'
-              + ' && (apt-get install -y -qq vim curl jq || apt-get install -y -qq vim-tiny curl jq)'
+              'cp /tools/kubectl /usr/local/bin/kubectl && chmod +x /usr/local/bin/kubectl'
+              + ' && for i in $(seq 1 30); do apt-get update -qq 2>/dev/null && break; sleep 2; done'
+              + ' && (apt-get install -y -qq --no-install-recommends vim curl jq || apt-get install -y -qq --no-install-recommends vim-tiny curl jq)'
+              + ' && rm -rf /var/lib/apt/lists/* /var/cache/apt/*'
               + ' && ln -sf "$(command -v vim)" /usr/bin/vi'
-              + ' && sleep infinity',
+              + ' && exec sleep infinity',
             ],
             workingDir: '/workspace',
             securityContext: { runAsUser: 0 },
@@ -95,8 +83,8 @@ export async function ensureWorkspacePod(
               failureThreshold: 40,
             },
             resources: {
-              requests: { cpu: '100m', memory: '128Mi' },
-              limits: { cpu: '500m', memory: '512Mi' },
+              requests: { cpu: '100m', memory: '256Mi' },
+              limits: { cpu: '500m', memory: '1Gi' },
             },
             env: [
               { name: 'KUBECONFIG', value: '/etc/kubeconfig/config' },
@@ -141,16 +129,24 @@ export async function ensureWorkspacePod(
     },
   });
 
-  // Wait for pod to be ready (최대 120초 — apt-get install 소요 시간 포함)
-  for (let i = 0; i < 60; i++) {
+  // Wait for workspace container to be ready (최대 180초 — Istio sidecar 대기 + apt-get 소요 시간)
+  for (let i = 0; i < 90; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     try {
       const pod = await coreApi.readNamespacedPod({ name: podName, namespace });
-      const containerStatus = pod.status?.containerStatuses?.[0];
-      if (containerStatus?.ready) {
+      const workspaceStatus = pod.status?.containerStatuses?.find((c) => c.name === 'workspace');
+      if (workspaceStatus?.ready) {
         return podName;
       }
-    } catch {
+      // workspace 컨테이너가 에러로 종료된 경우 즉시 실패
+      if (workspaceStatus?.state?.terminated) {
+        const exitCode = workspaceStatus.state.terminated.exitCode;
+        throw new Error(`Workspace container exited with code ${exitCode}`);
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith('Workspace container')) {
+        throw err;
+      }
       // continue waiting
     }
   }
@@ -158,41 +154,20 @@ export async function ensureWorkspacePod(
   throw new Error('Workspace pod failed to become ready within timeout');
 }
 
-export async function cleanupWorkspacePod(
-  coreApi: CoreV1Api,
-  namespace: string,
-): Promise<void> {
-  const podName = `${SERVER_CONFIG.workspacePodPrefix}-session`;
-
-  try {
-    await coreApi.deleteNamespacedPod({ name: podName, namespace });
-  } catch {
-    // 이미 없으면 무시
-  }
-
-  try {
-    await coreApi.deleteNamespacedSecret({ name: SECRET_NAME, namespace });
-  } catch {
-    // 이미 없으면 무시
-  }
-}
-
-async function waitForPodGone(
+export function deleteWorkspacePod(
   coreApi: CoreV1Api,
   namespace: string,
   podName: string,
-): Promise<void> {
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    try {
-      await coreApi.readNamespacedPod({ name: podName, namespace });
-      // Pod still exists, keep waiting
-    } catch {
-      // 404 = pod is gone
-      return;
-    }
-  }
-  throw new Error(`Pod ${podName} did not terminate within 30 seconds`);
+): void {
+  console.info(`[workspace-pod] deleting pod ${podName} in ${namespace}`);
+  coreApi.deleteNamespacedPod({ name: podName, namespace, gracePeriodSeconds: 0 }).catch(() => {});
+}
+
+export function deleteKubeconfigSecret(
+  coreApi: CoreV1Api,
+  namespace: string,
+): void {
+  coreApi.deleteNamespacedSecret({ name: SECRET_NAME, namespace }).catch(() => {});
 }
 
 async function ensureKubeconfigSecret(
@@ -222,62 +197,5 @@ async function ensureKubeconfigSecret(
         data: { config: encoded },
       },
     });
-  }
-}
-
-function isNotFoundError(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null) {
-    return false;
-  }
-
-  const maybeErr = err as {
-    code?: number;
-    statusCode?: number;
-    body?: { code?: number; reason?: string } | string;
-    response?: { statusCode?: number };
-    message?: string;
-  };
-
-  const bodyCode = typeof maybeErr.body === 'object' && maybeErr.body !== null
-    ? maybeErr.body.code
-    : undefined;
-  const bodyReason = typeof maybeErr.body === 'object' && maybeErr.body !== null
-    ? maybeErr.body.reason
-    : undefined;
-
-  if (maybeErr.code === 404
-    || maybeErr.statusCode === 404
-    || bodyCode === 404
-    || maybeErr.response?.statusCode === 404
-    || bodyReason === 'NotFound') {
-    return true;
-  }
-
-  if (typeof maybeErr.body === 'string') {
-    try {
-      const parsed = JSON.parse(maybeErr.body) as { code?: number; reason?: string };
-      if (parsed.code === 404 || parsed.reason === 'NotFound') {
-        return true;
-      }
-    } catch {
-      // ignore invalid JSON body
-    }
-  }
-
-  return typeof maybeErr.message === 'string'
-    && (maybeErr.message.includes('HTTP-Code: 404') || maybeErr.message.includes('"reason":"NotFound"'));
-}
-
-async function hasRequiredEditors(exec: Exec, namespace: string, podName: string): Promise<boolean> {
-  try {
-    const result = await execCommand(
-      exec,
-      namespace,
-      podName,
-      ['sh', '-lc', 'if command -v vim >/dev/null 2>&1 && command -v vi >/dev/null 2>&1; then echo ok; else echo missing; fi'],
-    );
-    return result.includes('ok');
-  } catch {
-    return false;
   }
 }

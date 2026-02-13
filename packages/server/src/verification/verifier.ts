@@ -1,13 +1,11 @@
 import type { Exec } from '@kubernetes/client-node';
 import type { VerificationCheck, CheckResult, VerificationResponse } from '@ckad-tester/shared/lab';
 import { execCommand } from './execCommand.js';
-import { SERVER_CONFIG } from '../config.js';
-
-const WORKSPACE_POD = `${SERVER_CONFIG.workspacePodPrefix}-session`;
 
 export async function runVerification(
   exec: Exec,
   namespace: string,
+  podName: string,
   questionId: string,
   checks: VerificationCheck[],
 ): Promise<VerificationResponse> {
@@ -16,7 +14,7 @@ export async function runVerification(
   for (const check of checks) {
     try {
       const command = ['sh', '-c', check.command];
-      const actual = await execCommand(exec, namespace, WORKSPACE_POD, command);
+      const actual = await execCommand(exec, namespace, podName, command);
 
       const expected = check.expected;
       const passed = matchResult(actual, expected);

@@ -35,8 +35,13 @@ verifyRouter.post('/verify', async (req, res) => {
     return;
   }
 
+  if (!entry.podName) {
+    res.status(400).json({ error: 'Workspace pod not ready' });
+    return;
+  }
+
   try {
-    const result = await runVerification(entry.exec, entry.namespace, questionId, checks);
+    const result = await runVerification(entry.exec, entry.namespace, entry.podName, questionId, checks);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: `Verification failed: ${String(err)}` });

@@ -110,6 +110,20 @@ export function RealTerminal() {
     };
   }, [state.status, meta.wsRef]);
 
+  // 연결 완료 시 정확한 터미널 크기 전송
+  useEffect(() => {
+    if (state.status !== 'connected') return;
+    const ws = meta.wsRef.current;
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!ws || !term || !fit || ws.readyState !== WebSocket.OPEN) return;
+
+    requestAnimationFrame(() => {
+      fit.fit();
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    });
+  }, [state.status, meta.wsRef]);
+
   // 연결 끊김 시 xterm에 시각적 피드백
   useEffect(() => {
     const term = termRef.current;

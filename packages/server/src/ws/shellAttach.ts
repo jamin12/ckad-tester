@@ -8,12 +8,12 @@ export interface ShellConnection {
   resize: (cols: number, rows: number) => void;
 }
 
-export function attachShell(
+export async function attachShell(
   exec: Exec,
   namespace: string,
   podName: string,
   ws: WebSocket,
-): ShellConnection {
+): Promise<ShellConnection> {
   const stdinStream = new Readable({
     read() {},
   });
@@ -36,10 +36,9 @@ export function attachShell(
     },
   });
 
-  // K8s exec WebSocket 참조 (resize 채널 접근용)
-  let execWs: WebSocket | null = null;
+  console.info(`[ws/shell] attaching to ${podName}/workspace in ${namespace}`);
 
-  exec.exec(
+  const execWs = await exec.exec(
     namespace,
     podName,
     'workspace',
@@ -48,27 +47,33 @@ export function attachShell(
     stderrStream,
     stdinStream,
     true, // tty
-  ).then((socket) => {
-    execWs = socket;
+  );
 
-    socket.on('close', (code: number, reason: Buffer) => {
-      const reasonText = reason.toString() || 'no-reason';
-      console.warn(`[ws/shell] exec socket closed (code=${code}, reason=${reasonText})`);
-      if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: 'error', message: `Shell session ended (code=${code}, reason=${reasonText}).` }));
-        ws.close();
-      }
-    });
+  console.info(`[ws/shell] exec socket opened for ${podName}`);
 
-    socket.on('error', (err: Error) => {
-      if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify({ type: 'error', message: `Shell error: ${err.message}` }));
-        ws.close();
-      }
-    });
-  }).catch((err) => {
+  execWs.on('message', (raw: Buffer) => {
+    // K8s exec protocol: 첫 바이트 = channel, 나머지 = data
+    const channel = raw[0];
+    // channel 3 = status/error
+    if (channel === 3) {
+      console.warn(`[ws/shell] status channel message: ${raw.subarray(1).toString()}`);
+    }
+  });
+
+  execWs.on('close', (code: number, reason: Buffer) => {
+    const reasonText = reason.toString() || 'no-reason';
+    console.warn(`[ws/shell] exec socket closed (code=${code}, reason=${reasonText}, pod=${podName})`);
     if (ws.readyState === ws.OPEN) {
-      ws.send(JSON.stringify({ type: 'error', message: `Shell error: ${String(err)}` }));
+      ws.send(JSON.stringify({ type: 'error', message: `Shell session ended (code=${code}, reason=${reasonText}).` }));
+      ws.close();
+    }
+  });
+
+  execWs.on('error', (err: Error) => {
+    console.error(`[ws/shell] exec socket error: ${err.message}`);
+    if (ws.readyState === ws.OPEN) {
+      ws.send(JSON.stringify({ type: 'error', message: `Shell error: ${err.message}` }));
+      ws.close();
     }
   });
 
@@ -77,15 +82,13 @@ export function attachShell(
       stdinStream.destroy();
       stdoutStream.destroy();
       stderrStream.destroy();
-      if (execWs) {
-        try { execWs.close(); } catch { /* ignore */ }
-      }
+      try { execWs.close(); } catch { /* ignore */ }
     },
     get stdin() {
       return stdinStream;
     },
     resize(cols: number, rows: number) {
-      if (!execWs || execWs.readyState !== execWs.OPEN) return;
+      if (execWs.readyState !== execWs.OPEN) return;
       // K8s exec protocol: channel 4 = resize
       // 메시지 형식: 1바이트 채널 번호 + JSON {"Width": cols, "Height": rows}
       const resizeMsg = JSON.stringify({ Width: cols, Height: rows });

@@ -19,6 +19,11 @@ export function TerminalInput({ ref }: TerminalInputProps) {
     }
   }, [ref]);
 
+  function autoResize(textarea: HTMLTextAreaElement) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     const textarea = e.currentTarget;
 
@@ -31,6 +36,7 @@ export function TerminalInput({ ref }: TerminalInputProps) {
       historyIndexRef.current = -1;
       actions.submit(value);
       textarea.value = '';
+      autoResize(textarea);
       return;
     }
 
@@ -46,6 +52,7 @@ export function TerminalInput({ ref }: TerminalInputProps) {
       }
 
       textarea.value = history[historyIndexRef.current] ?? '';
+      autoResize(textarea);
       return;
     }
 
@@ -62,20 +69,22 @@ export function TerminalInput({ ref }: TerminalInputProps) {
         historyIndexRef.current = -1;
         textarea.value = '';
       }
+      autoResize(textarea);
       return;
     }
   }
 
   return (
-    <div className="flex items-center border-t border-border-subtle px-3 py-2">
-      {PROMPT_PREFIX}
+    <div className="flex items-start border-t border-border-subtle px-3 py-2">
+      <span className="mt-0.5">{PROMPT_PREFIX}</span>
       <textarea
         ref={ref}
         rows={1}
         aria-label="kubectl 명령어 입력"
-        className="flex-1 resize-none bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none"
+        className="max-h-32 flex-1 resize-none overflow-y-auto bg-transparent text-sm text-text-primary placeholder-text-tertiary focus:outline-none"
         placeholder="kubectl ..."
         onKeyDown={handleKeyDown}
+        onInput={(e) => autoResize(e.currentTarget)}
       />
     </div>
   );

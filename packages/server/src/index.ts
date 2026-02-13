@@ -27,9 +27,9 @@ setInterval(() => {
 }, SERVER_CONFIG.cleanupIntervalMs);
 
 // Graceful shutdown: pod + secret 자동 정리
-async function shutdown() {
+function shutdown() {
   console.log('\nShutting down... cleaning up K8s resources');
-  await sessionManager.destroyAll();
+  sessionManager.destroyAll();
   server.close();
   process.exit(0);
 }

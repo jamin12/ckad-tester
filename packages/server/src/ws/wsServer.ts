@@ -4,7 +4,7 @@ import type WebSocket from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { WsClientMessage } from '@ckad-tester/shared/lab';
 import { sessionManager } from '../sessions/SessionManager.js';
-import { ensureWorkspacePod } from './workspacePod.js';
+import { createWorkspacePod } from './workspacePod.js';
 import { attachShell } from './shellAttach.js';
 import type { ShellConnection } from './shellAttach.js';
 
@@ -12,6 +12,8 @@ export function setupWsServer(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/ws/terminal' });
 
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
+    const wsId = Math.random().toString(36).slice(2, 8);
+    console.info(`[ws] new connection ${wsId}`);
     let sessionId: string | null = null;
     let shell: ShellConnection | null = null;
 
@@ -47,8 +49,10 @@ export function setupWsServer(server: Server): void {
             const entry = sessionManager.createSession(msg.config);
             sessionId = entry.session.sessionId;
 
-            const podName = await ensureWorkspacePod(entry.coreApi, entry.exec, entry.namespace, msg.config.kubeconfig);
-            shell = attachShell(entry.exec, entry.namespace, podName, ws);
+            const activePodNames = sessionManager.getActivePodNames();
+            const podName = await createWorkspacePod(entry.coreApi, entry.namespace, msg.config.kubeconfig, activePodNames);
+            entry.podName = podName;
+            shell = await attachShell(entry.exec, entry.namespace, podName, ws);
 
             ws.send(JSON.stringify({ type: 'connected', session: entry.session }));
           } catch (err) {
@@ -75,7 +79,8 @@ export function setupWsServer(server: Server): void {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
+      console.info(`[ws] ${wsId} closed (code=${code}, reason=${reason?.toString() || 'none'}, session=${sessionId})`);
       clearInterval(pingInterval);
       if (shell) {
         shell.destroy();
@@ -85,7 +90,8 @@ export function setupWsServer(server: Server): void {
       }
     });
 
-    ws.on('error', () => {
+    ws.on('error', (err) => {
+      console.error(`[ws] ${wsId} error: ${err.message}`);
       clearInterval(pingInterval);
       if (shell) {
         shell.destroy();

@@ -1,15 +1,16 @@
 import { KubeConfig, CoreV1Api, Exec } from '@kubernetes/client-node';
 import { randomUUID } from 'node:crypto';
 import { SERVER_CONFIG } from '../config.js';
-import { cleanupWorkspacePod } from '../ws/workspacePod.js';
+import { deleteWorkspacePod, deleteKubeconfigSecret } from '../ws/workspacePod.js';
 import type { ClusterConnectionConfig, LabSession } from '@ckad-tester/shared/lab';
 
-interface SessionEntry {
+export interface SessionEntry {
   session: LabSession;
   kubeConfig: KubeConfig;
   coreApi: CoreV1Api;
   exec: Exec;
   namespace: string;
+  podName: string | null;
   createdAt: number;
   lastActiveAt: number;
 }
@@ -35,6 +36,7 @@ class SessionManager {
       coreApi,
       exec,
       namespace,
+      podName: null,
       createdAt: now,
       lastActiveAt: now,
     };
@@ -51,10 +53,24 @@ class SessionManager {
     return entry;
   }
 
+  /** 현재 활성 세션들이 사용 중인 pod 이름 집합 */
+  getActivePodNames(): Set<string> {
+    const names = new Set<string>();
+    for (const entry of this.sessions.values()) {
+      if (entry.podName) {
+        names.add(entry.podName);
+      }
+    }
+    return names;
+  }
+
   destroySession(sessionId: string): void {
-    // Pod는 삭제하지 않음 — 공유 pod이므로 다른 세션이 사용 중일 수 있음
-    // Pod 정리는 서버 종료(destroyAll)에서만 수행
-    this.sessions.delete(sessionId);
+    const entry = this.sessions.get(sessionId);
+    if (entry) {
+      console.info(`[session] destroying session ${sessionId}, podName=${entry.podName ?? 'none'}`);
+      // Pod는 삭제하지 않음 — 다음 세션이 재사용
+      this.sessions.delete(sessionId);
+    }
   }
 
   cleanupStale(): void {
@@ -66,12 +82,14 @@ class SessionManager {
     }
   }
 
-  async destroyAll(): Promise<void> {
-    const entries = [...this.sessions.values()];
+  destroyAll(): void {
+    for (const entry of this.sessions.values()) {
+      if (entry.podName) {
+        deleteWorkspacePod(entry.coreApi, entry.namespace, entry.podName);
+      }
+      deleteKubeconfigSecret(entry.coreApi, entry.namespace);
+    }
     this.sessions.clear();
-    await Promise.allSettled(
-      entries.map((entry) => cleanupWorkspacePod(entry.coreApi, entry.namespace)),
-    );
   }
 }
 

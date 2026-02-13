@@ -58,7 +58,7 @@ export function QuizPage({ mode, onRevealHint, onComplete }: QuizPageProps) {
 
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-2">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-2 [&>*]:min-w-0">
         <QuestionPanel
           question={currentQuestion}
           hintsRevealed={hintsRevealed}
