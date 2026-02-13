@@ -255,4 +255,116 @@ export const servicesNetworkingQuestions: Question[] = [
       },
     ],
   },
+  {
+    id: 'sn-6',
+    category: 'services-networking',
+    difficulty: 'hard',
+    title: 'NetworkPolicy로 Pod 간 트래픽 제한',
+    scenario:
+      'web Pod와 db Pod를 생성하고, NetworkPolicy로 db Pod에 대한 트래픽을 제한하세요.\n\n- "web1"이라는 Pod를 생성하세요: nginx 이미지, 레이블 run=web1, tier=web\n- "db"라는 Pod를 생성하세요: mysql:latest 이미지, 레이블 tier=db, containerPort 3306, 환경변수 MYSQL_ROOT_PASSWORD=supersecret\n- "db-ingress-web"이라는 NetworkPolicy를 생성하여, tier=db 레이블의 Pod에 대해 tier=web 레이블의 Pod에서 오는 TCP 3306 트래픽만 허용하세요.',
+    expectedAnswers: [
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'NetworkPolicy' },
+          { path: 'metadata.name', value: 'db-ingress-web' },
+          { path: 'spec.podSelector.matchLabels.tier', value: 'db' },
+          { path: 'spec.policyTypes[0]', value: 'Ingress' },
+          { path: 'spec.ingress[0].from[0].podSelector.matchLabels.tier', value: 'web' },
+          { path: 'spec.ingress[0].ports[0].port', value: 3306 },
+          { path: 'spec.ingress[0].ports[0].protocol', value: 'TCP' },
+        ],
+        description: 'YAML 매니페스트로 Ingress NetworkPolicy 생성',
+      },
+    ],
+    hints: [
+      { text: 'NetworkPolicy의 spec.podSelector로 보호할 Pod(tier=db)를 선택하고, spec.ingress에서 허용할 소스를 정의하세요.', penalty: 0.1 },
+      { text: 'ingress[].from[].podSelector.matchLabels.tier=web으로 소스 Pod를 지정하고, ports[].port=3306으로 허용 포트를 설정합니다.', penalty: 0.2 },
+      { text: 'apiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: db-ingress-web\nspec:\n  podSelector:\n    matchLabels:\n      tier: db\n  policyTypes:\n  - Ingress\n  ingress:\n  - from:\n    - podSelector:\n        matchLabels:\n          tier: web\n    ports:\n    - port: 3306\n      protocol: TCP', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Pod "web1" exists with tier=web label',
+        command: 'kubectl get pod web1 -o jsonpath="{.metadata.labels.tier}"',
+        expected: 'web',
+      },
+      {
+        description: 'Pod "db" exists with tier=db label',
+        command: 'kubectl get pod db -o jsonpath="{.metadata.labels.tier}"',
+        expected: 'db',
+      },
+      {
+        description: 'NetworkPolicy "db-ingress-web" exists',
+        command: 'kubectl get netpol db-ingress-web -o jsonpath="{.metadata.name}"',
+        expected: 'db-ingress-web',
+      },
+      {
+        description: 'NetworkPolicy targets tier=db pods',
+        command: 'kubectl get netpol db-ingress-web -o jsonpath="{.spec.podSelector.matchLabels.tier}"',
+        expected: 'db',
+      },
+      {
+        description: 'Allows ingress from tier=web on port 3306',
+        command: 'kubectl get netpol db-ingress-web -o jsonpath="{.spec.ingress[0].ports[0].port}"',
+        expected: '3306',
+      },
+    ],
+  },
+  {
+    id: 'sn-7',
+    category: 'services-networking',
+    difficulty: 'hard',
+    title: 'NetworkPolicy로 레이블 기반 접근 제어',
+    scenario:
+      'Deployment를 생성하고 특정 레이블이 있는 Pod만 접근할 수 있도록 NetworkPolicy를 설정하세요.\n\n- "secure-nginx"라는 Deployment를 생성하세요: nginx 이미지, 레플리카 2개\n- "secure-nginx" Deployment를 포트 80으로 노출하는 ClusterIP Service "secure-svc"를 생성하세요.\n- "access-nginx"라는 NetworkPolicy를 생성하여, "access: granted" 레이블이 있는 Pod에서만 "app: secure-nginx" Pod로의 인바운드 트래픽을 허용하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'deployment', 'secure-nginx', '--image', 'nginx', '--replicas', '2'],
+        description: 'kubectl create deployment로 Deployment 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['expose', 'deployment', 'secure-nginx', '--port', '80', '--name', 'secure-svc'],
+        description: 'kubectl expose로 Service 생성',
+      },
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'NetworkPolicy' },
+          { path: 'metadata.name', value: 'access-nginx' },
+          { path: 'spec.podSelector.matchLabels.app', value: 'secure-nginx' },
+          { path: 'spec.ingress[0].from[0].podSelector.matchLabels.access', value: 'granted' },
+        ],
+        description: 'YAML 매니페스트로 레이블 기반 NetworkPolicy 생성',
+      },
+    ],
+    hints: [
+      { text: 'NetworkPolicy의 spec.podSelector로 보호 대상 Pod를 선택하고, ingress[].from[].podSelector로 허용할 소스를 지정하세요.', penalty: 0.1 },
+      { text: 'podSelector.matchLabels.access=granted로 access: granted 레이블이 있는 Pod만 허용합니다.', penalty: 0.2 },
+      { text: 'kubectl create deploy secure-nginx --image=nginx --replicas=2\nkubectl expose deploy secure-nginx --port=80 --name=secure-svc\n---\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\nmetadata:\n  name: access-nginx\nspec:\n  podSelector:\n    matchLabels:\n      app: secure-nginx\n  ingress:\n  - from:\n    - podSelector:\n        matchLabels:\n          access: granted', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Deployment "secure-nginx" exists',
+        command: 'kubectl get deploy secure-nginx -o jsonpath="{.metadata.name}"',
+        expected: 'secure-nginx',
+      },
+      {
+        description: 'Service "secure-svc" exists',
+        command: 'kubectl get svc secure-svc -o jsonpath="{.metadata.name}"',
+        expected: 'secure-svc',
+      },
+      {
+        description: 'NetworkPolicy "access-nginx" exists',
+        command: 'kubectl get netpol access-nginx -o jsonpath="{.metadata.name}"',
+        expected: 'access-nginx',
+      },
+      {
+        description: 'NetworkPolicy allows access=granted pods',
+        command: 'kubectl get netpol access-nginx -o jsonpath="{.spec.ingress[0].from[0].podSelector.matchLabels.access}"',
+        expected: 'granted',
+      },
+    ],
+  },
 ];

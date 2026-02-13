@@ -247,4 +247,330 @@ export const applicationDesignQuestions: Question[] = [
       },
     ],
   },
+  {
+    id: 'ad-6',
+    category: 'application-design',
+    difficulty: 'easy',
+    title: '네임스페이스에 Pod 생성 및 포트 노출',
+    scenario:
+      '웹 애플리케이션에서 캐시로 사용할 Redis Pod를 생성하세요.\n\n- "frontend" 네임스페이스에 Pod를 생성하세요. 네임스페이스가 없으면 먼저 생성합니다.\n- Pod 이름은 "cache"이고, library/redis:3.2 이미지를 사용합니다.\n- 포트 6379를 노출하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'namespace', 'frontend'],
+        description: 'kubectl create namespace 명령어로 네임스페이스 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['run', 'cache', '--image', 'library/redis:3.2', '--port', '6379', '-n', 'frontend'],
+        description: 'kubectl run 명령어로 Redis Pod 생성',
+      },
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Pod' },
+          { path: 'metadata.name', value: 'cache' },
+          { path: 'metadata.namespace', value: 'frontend' },
+          { path: 'spec.containers[0].image', value: 'library/redis:3.2' },
+          { path: 'spec.containers[0].ports[0].containerPort', value: 6379 },
+        ],
+        description: 'YAML 매니페스트로 Redis Pod 생성',
+      },
+    ],
+    hints: [
+      { text: 'kubectl create namespace으로 네임스페이스를 먼저 생성하세요.', penalty: 0.1 },
+      { text: 'kubectl run 명령어에 --port와 -n 플래그를 사용하여 포트와 네임스페이스를 지정합니다.', penalty: 0.2 },
+      { text: 'kubectl create ns frontend\nkubectl run cache --image=library/redis:3.2 --port=6379 -n frontend', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Namespace "frontend" exists',
+        command: 'kubectl get ns frontend -o jsonpath="{.metadata.name}"',
+        expected: 'frontend',
+      },
+      {
+        description: 'Pod "cache" exists in frontend namespace',
+        command: 'kubectl get pod cache -n frontend -o jsonpath="{.metadata.name}"',
+        expected: 'cache',
+      },
+      {
+        description: 'Image is library/redis:3.2',
+        command: 'kubectl get pod cache -n frontend -o jsonpath="{.spec.containers[0].image}"',
+        expected: 'library/redis:3.2',
+      },
+      {
+        description: 'ContainerPort is 6379',
+        command: 'kubectl get pod cache -n frontend -o jsonpath="{.spec.containers[0].ports[0].containerPort}"',
+        expected: '6379',
+      },
+    ],
+  },
+  {
+    id: 'ad-7',
+    category: 'application-design',
+    difficulty: 'easy',
+    title: '리소스 요청(Requests)이 설정된 Pod 생성',
+    scenario:
+      '특정 CPU와 메모리 리소스를 요청하는 Pod를 생성하여, 해당 리소스를 보유한 노드에 스케줄링되도록 하세요.\n\n- "resources" 네임스페이스에 Pod를 생성하세요. 네임스페이스가 없으면 먼저 생성합니다.\n- Pod 이름은 "pod-resources"이고, nginx 이미지를 사용합니다.\n- 컨테이너에 최소 CPU 300m, 메모리 1Gi를 요청(requests)하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'namespace', 'resources'],
+        description: 'kubectl create namespace 명령어로 네임스페이스 생성',
+      },
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Pod' },
+          { path: 'metadata.name', value: 'pod-resources' },
+          { path: 'metadata.namespace', value: 'resources' },
+          { path: 'spec.containers[0].image', value: 'nginx' },
+          { path: 'spec.containers[0].resources.requests.cpu', value: '300m' },
+          { path: 'spec.containers[0].resources.requests.memory', value: '1Gi' },
+        ],
+        description: 'YAML 매니페스트로 리소스 요청이 설정된 Pod 생성',
+      },
+    ],
+    hints: [
+      { text: '컨테이너 스펙의 resources.requests 필드에서 CPU와 메모리를 지정하세요.', penalty: 0.1 },
+      { text: 'CPU는 밀리코어(m) 단위로, 메모리는 Gi/Mi 단위로 지정합니다. 예: cpu: 300m, memory: 1Gi', penalty: 0.2 },
+      { text: 'kubectl create ns resources\n---\napiVersion: v1\nkind: Pod\nmetadata:\n  name: pod-resources\n  namespace: resources\nspec:\n  containers:\n  - name: pod-resources\n    image: nginx\n    resources:\n      requests:\n        cpu: 300m\n        memory: 1Gi', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Namespace "resources" exists',
+        command: 'kubectl get ns resources -o jsonpath="{.metadata.name}"',
+        expected: 'resources',
+      },
+      {
+        description: 'Pod "pod-resources" exists in resources namespace',
+        command: 'kubectl get pod pod-resources -n resources -o jsonpath="{.metadata.name}"',
+        expected: 'pod-resources',
+      },
+      {
+        description: 'CPU request is 300m',
+        command: 'kubectl get pod pod-resources -n resources -o jsonpath="{.spec.containers[0].resources.requests.cpu}"',
+        expected: '300m',
+      },
+      {
+        description: 'Memory request is 1Gi',
+        command: 'kubectl get pod pod-resources -n resources -o jsonpath="{.spec.containers[0].resources.requests.memory}"',
+        expected: '1Gi',
+      },
+    ],
+  },
+  {
+    id: 'ad-8',
+    category: 'application-design',
+    difficulty: 'medium',
+    title: 'Job 생성',
+    scenario:
+      'Job 리소스를 생성하여 한 번 실행되고 완료되는 작업을 정의하세요.\n\n- "busybox-job"이라는 Job을 생성하세요.\n- busybox 이미지를 사용하고, 명령어 "/bin/sh -c \'echo hello;sleep 30;echo world\'"를 실행합니다.\n- Job이 완료되면 로그를 확인하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'job', 'busybox-job', '--image', 'busybox'],
+        description: 'kubectl create job 명령어로 Job 생성',
+      },
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Job' },
+          { path: 'metadata.name', value: 'busybox-job' },
+          { path: 'spec.template.spec.containers[0].image', value: 'busybox' },
+          { path: 'spec.template.spec.restartPolicy', value: 'Never' },
+        ],
+        description: 'YAML 매니페스트로 Job 생성',
+      },
+    ],
+    hints: [
+      { text: 'kubectl create job 명령어를 사용하여 Job을 생성할 수 있습니다.', penalty: 0.1 },
+      { text: 'Job 스펙에서 restartPolicy는 Never 또는 OnFailure만 사용 가능합니다.', penalty: 0.2 },
+      { text: 'kubectl create job busybox-job --image=busybox -- /bin/sh -c "echo hello;sleep 30;echo world"', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Job "busybox-job" exists',
+        command: 'kubectl get job busybox-job -o jsonpath="{.metadata.name}"',
+        expected: 'busybox-job',
+      },
+      {
+        description: 'Job image is busybox',
+        command: 'kubectl get job busybox-job -o jsonpath="{.spec.template.spec.containers[0].image}"',
+        expected: 'busybox',
+      },
+    ],
+  },
+  {
+    id: 'ad-9',
+    category: 'application-design',
+    difficulty: 'hard',
+    title: 'Job completions와 parallelism 설정',
+    scenario:
+      '여러 번 실행되고 병렬로 처리되는 Job을 생성하세요.\n\n- "parallel-job"이라는 Job을 생성하세요.\n- busybox 이미지를 사용하고 명령어 "/bin/sh -c \'echo processing;sleep 5;echo done\'"을 실행합니다.\n- completions를 5로 설정하여 총 5번 실행되도록 합니다.\n- parallelism을 2로 설정하여 한 번에 2개씩 병렬 실행되도록 합니다.\n- activeDeadlineSeconds를 60으로 설정하세요.',
+    expectedAnswers: [
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Job' },
+          { path: 'metadata.name', value: 'parallel-job' },
+          { path: 'spec.completions', value: 5 },
+          { path: 'spec.parallelism', value: 2 },
+          { path: 'spec.activeDeadlineSeconds', value: 60 },
+          { path: 'spec.template.spec.containers[0].image', value: 'busybox' },
+          { path: 'spec.template.spec.restartPolicy', value: 'Never' },
+        ],
+        description: 'YAML 매니페스트로 completions/parallelism이 설정된 Job 생성',
+      },
+    ],
+    hints: [
+      { text: 'spec.completions는 총 실행 횟수, spec.parallelism은 동시 실행 수를 지정합니다.', penalty: 0.1 },
+      { text: 'spec.activeDeadlineSeconds로 Job의 최대 실행 시간을 제한할 수 있습니다. 시간 초과 시 Job이 종료됩니다.', penalty: 0.2 },
+      { text: 'apiVersion: batch/v1\nkind: Job\nmetadata:\n  name: parallel-job\nspec:\n  completions: 5\n  parallelism: 2\n  activeDeadlineSeconds: 60\n  template:\n    spec:\n      containers:\n      - name: busybox\n        image: busybox\n        command: ["/bin/sh", "-c", "echo processing;sleep 5;echo done"]\n      restartPolicy: Never', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Job "parallel-job" exists',
+        command: 'kubectl get job parallel-job -o jsonpath="{.metadata.name}"',
+        expected: 'parallel-job',
+      },
+      {
+        description: 'Completions is 5',
+        command: 'kubectl get job parallel-job -o jsonpath="{.spec.completions}"',
+        expected: '5',
+      },
+      {
+        description: 'Parallelism is 2',
+        command: 'kubectl get job parallel-job -o jsonpath="{.spec.parallelism}"',
+        expected: '2',
+      },
+      {
+        description: 'activeDeadlineSeconds is 60',
+        command: 'kubectl get job parallel-job -o jsonpath="{.spec.activeDeadlineSeconds}"',
+        expected: '60',
+      },
+    ],
+  },
+  {
+    id: 'ad-10',
+    category: 'application-design',
+    difficulty: 'easy',
+    title: 'Pod Label 관리',
+    scenario:
+      'Pod를 생성하고 레이블을 관리하세요.\n\n- "nginx-labeled"라는 Pod를 nginx 이미지로 생성하고, 레이블 app=v1을 지정하세요.\n- 생성 후 레이블을 app=v2로 변경하세요.\n- 변경된 레이블을 확인하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['run', 'nginx-labeled', '--image', 'nginx', '--labels', 'app=v1'],
+        description: 'kubectl run 명령어로 레이블이 지정된 Pod 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['label', 'pod', 'nginx-labeled', 'app=v2', '--overwrite'],
+        description: 'kubectl label로 레이블 변경',
+      },
+    ],
+    hints: [
+      { text: 'kubectl run 명령어에 --labels 또는 -l 플래그로 레이블을 지정할 수 있습니다.', penalty: 0.1 },
+      { text: 'kubectl label pod <이름> <키>=<값> --overwrite 명령어로 기존 레이블을 변경합니다.', penalty: 0.2 },
+      { text: 'kubectl run nginx-labeled --image=nginx --labels=app=v1\nkubectl label pod nginx-labeled app=v2 --overwrite', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Pod "nginx-labeled" exists',
+        command: 'kubectl get pod nginx-labeled -o jsonpath="{.metadata.name}"',
+        expected: 'nginx-labeled',
+      },
+      {
+        description: 'Label app=v2 is set',
+        command: 'kubectl get pod nginx-labeled -o jsonpath="{.metadata.labels.app}"',
+        expected: 'v2',
+      },
+    ],
+  },
+  {
+    id: 'ad-11',
+    category: 'application-design',
+    difficulty: 'medium',
+    title: 'nodeSelector를 사용한 Pod 배치',
+    scenario:
+      '특정 노드에만 스케줄링되도록 nodeSelector가 설정된 Pod를 생성하세요.\n\n- "gpu-pod"라는 Pod를 nginx 이미지로 생성하세요.\n- nodeSelector를 사용하여 "accelerator: nvidia-tesla-p100" 레이블이 있는 노드에만 배치되도록 설정하세요.\n- 컨테이너 이름은 "gpu-container"로 하세요.',
+    expectedAnswers: [
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Pod' },
+          { path: 'metadata.name', value: 'gpu-pod' },
+          { path: 'spec.containers[0].name', value: 'gpu-container' },
+          { path: 'spec.containers[0].image', value: 'nginx' },
+          { path: 'spec.nodeSelector.accelerator', value: 'nvidia-tesla-p100' },
+        ],
+        description: 'YAML 매니페스트로 nodeSelector가 설정된 Pod 생성',
+      },
+    ],
+    hints: [
+      { text: 'spec.nodeSelector 필드를 사용하여 Pod가 배치될 노드의 레이블을 지정하세요.', penalty: 0.1 },
+      { text: 'nodeSelector는 키-값 쌍 형태로, 해당 레이블이 있는 노드에만 Pod가 스케줄링됩니다.', penalty: 0.2 },
+      { text: 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: gpu-pod\nspec:\n  nodeSelector:\n    accelerator: nvidia-tesla-p100\n  containers:\n  - name: gpu-container\n    image: nginx', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Pod "gpu-pod" exists',
+        command: 'kubectl get pod gpu-pod -o jsonpath="{.metadata.name}"',
+        expected: 'gpu-pod',
+      },
+      {
+        description: 'nodeSelector has accelerator=nvidia-tesla-p100',
+        command: 'kubectl get pod gpu-pod -o jsonpath="{.spec.nodeSelector.accelerator}"',
+        expected: 'nvidia-tesla-p100',
+      },
+    ],
+  },
+  {
+    id: 'ad-12',
+    category: 'application-design',
+    difficulty: 'hard',
+    title: 'Adapter 패턴 Multi-Container Pod',
+    scenario:
+      'Adapter 패턴을 사용하는 Multi-Container Pod를 생성하세요. 하나의 컨테이너가 로그를 생성하고, 다른 컨테이너가 로그를 변환합니다.\n\n- "adapter"라는 Pod를 생성하세요.\n- 첫 번째 컨테이너 "app": busybox 이미지, 명령어 `while true; do echo "$(date) | $(du -sh ~)" >> /var/logs/diskspace.txt; sleep 5; done;`\n- 두 번째 컨테이너 "transformer": busybox 이미지, 명령어 `sleep 20; while true; do while read LINE; do echo "$LINE" | cut -f2 -d"|" >> /var/logs/transformed.txt; done < /var/logs/diskspace.txt; sleep 20; done;`\n- 두 컨테이너가 emptyDir 볼륨을 "/var/logs" 경로로 공유하세요.',
+    expectedAnswers: [
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Pod' },
+          { path: 'metadata.name', value: 'adapter' },
+          { path: 'spec.containers[0].name', value: 'app' },
+          { path: 'spec.containers[0].image', value: 'busybox' },
+          { path: 'spec.containers[1].name', value: 'transformer' },
+          { path: 'spec.containers[1].image', value: 'busybox' },
+          { path: 'spec.containers[0].volumeMounts[0].mountPath', value: '/var/logs' },
+          { path: 'spec.containers[1].volumeMounts[0].mountPath', value: '/var/logs' },
+          { path: 'spec.volumes[0].emptyDir', value: '{}' },
+        ],
+        description: 'YAML 매니페스트로 Adapter 패턴 Multi-Container Pod 생성',
+      },
+    ],
+    hints: [
+      { text: '두 컨테이너가 같은 emptyDir 볼륨을 공유하여 로그 데이터를 주고받습니다.', penalty: 0.1 },
+      { text: 'spec.volumes에 emptyDir 볼륨을 정의하고, 양쪽 컨테이너의 volumeMounts에 같은 볼륨 이름으로 /var/logs 경로에 마운트합니다.', penalty: 0.2 },
+      { text: 'apiVersion: v1\nkind: Pod\nmetadata:\n  name: adapter\nspec:\n  volumes:\n  - name: shared-logs\n    emptyDir: {}\n  containers:\n  - name: app\n    image: busybox\n    command: [\"/bin/sh\", \"-c\", \"while true; do echo \\\"$(date) | $(du -sh ~)\\\" >> /var/logs/diskspace.txt; sleep 5; done;\"]\n    volumeMounts:\n    - name: shared-logs\n      mountPath: /var/logs\n  - name: transformer\n    image: busybox\n    command: [\"/bin/sh\", \"-c\", \"sleep 20; while true; do while read LINE; do echo \\\"$LINE\\\" | cut -f2 -d\\\"|\\\" >> /var/logs/transformed.txt; done < /var/logs/diskspace.txt; sleep 20; done;\"]\n    volumeMounts:\n    - name: shared-logs\n      mountPath: /var/logs', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Pod "adapter" exists',
+        command: 'kubectl get pod adapter -o jsonpath="{.metadata.name}"',
+        expected: 'adapter',
+      },
+      {
+        description: 'Pod has 2 containers',
+        command: 'kubectl get pod adapter -o jsonpath="{.spec.containers[*].name}"',
+        expected: 'app transformer',
+      },
+      {
+        description: 'Both containers mount /var/logs',
+        command: 'kubectl get pod adapter -o jsonpath="{.spec.containers[0].volumeMounts[0].mountPath}"',
+        expected: '/var/logs',
+      },
+    ],
+  },
 ];

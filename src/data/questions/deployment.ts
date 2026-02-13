@@ -194,4 +194,163 @@ export const deploymentQuestions: Question[] = [
       },
     ],
   },
+  {
+    id: 'dp-6',
+    category: 'deployment',
+    difficulty: 'medium',
+    title: 'Deployment 롤아웃 및 롤백',
+    scenario:
+      'Deployment를 생성하고, 이미지를 업데이트한 후 롤백하세요.\n\n- "development" 네임스페이스를 생성하세요.\n- "prod-deployment"라는 Deployment를 nginx:1.15.9 이미지와 4개의 레플리카로 "development" 네임스페이스에 생성하세요.\n- 이미지를 nginx:1.13.6으로 변경하세요.\n- 변경 사항을 롤백(undo)하여 이전 이미지(nginx:1.15.9)로 되돌리세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'namespace', 'development'],
+        description: 'kubectl create namespace 명령어로 네임스페이스 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['create', 'deployment', 'prod-deployment', '--image', 'nginx:1.15.9', '--replicas', '4', '-n', 'development'],
+        description: 'kubectl create deployment 명령어로 Deployment 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['set', 'image', 'deployment', 'prod-deployment', 'nginx=nginx:1.13.6', '-n', 'development'],
+        description: 'kubectl set image로 이미지 업데이트',
+      },
+      {
+        type: 'command',
+        requiredParts: ['rollout', 'undo', 'deployment', 'prod-deployment', '-n', 'development'],
+        description: 'kubectl rollout undo로 롤백',
+      },
+    ],
+    hints: [
+      { text: 'kubectl create deployment으로 Deployment를 생성하고, kubectl set image로 이미지를 변경합니다.', penalty: 0.1 },
+      { text: 'kubectl rollout undo deployment/<이름> -n <네임스페이스> 명령어로 이전 버전으로 롤백할 수 있습니다.', penalty: 0.2 },
+      { text: 'kubectl create ns development\nkubectl create deploy prod-deployment --image=nginx:1.15.9 --replicas=4 -n development\nkubectl set image deploy prod-deployment nginx=nginx:1.13.6 -n development\nkubectl rollout undo deploy prod-deployment -n development', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Namespace "development" exists',
+        command: 'kubectl get ns development -o jsonpath="{.metadata.name}"',
+        expected: 'development',
+      },
+      {
+        description: 'Deployment "prod-deployment" exists in development',
+        command: 'kubectl get deploy prod-deployment -n development -o jsonpath="{.metadata.name}"',
+        expected: 'prod-deployment',
+      },
+      {
+        description: 'Image rolled back to nginx:1.15.9',
+        command: 'kubectl get deploy prod-deployment -n development -o jsonpath="{.spec.template.spec.containers[0].image}"',
+        expected: 'nginx:1.15.9',
+      },
+      {
+        description: 'Replicas is 4',
+        command: 'kubectl get deploy prod-deployment -n development -o jsonpath="{.spec.replicas}"',
+        expected: '4',
+      },
+    ],
+  },
+  {
+    id: 'dp-7',
+    category: 'deployment',
+    difficulty: 'medium',
+    title: 'Deployment 디버깅 및 수정',
+    scenario:
+      '문제가 있는 Deployment를 배포하고 수정하세요.\n\n- "debug" 네임스페이스를 생성하세요.\n- "debug-deployment"라는 Deployment를 "debug" 네임스페이스에 생성하세요. busybox 이미지를 사용하고 레플리카는 3개입니다.\n- 컨테이너가 실행 상태를 유지하도록 command로 ["/bin/sh"]를, args로 ["-c", "while true; do sleep 10; done"]을 설정하세요.\n- 모든 Pod가 Running 상태인지 확인하세요.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'namespace', 'debug'],
+        description: 'kubectl create namespace 명령어로 네임스페이스 생성',
+      },
+      {
+        type: 'yaml',
+        yamlRequirements: [
+          { path: 'kind', value: 'Deployment' },
+          { path: 'metadata.name', value: 'debug-deployment' },
+          { path: 'metadata.namespace', value: 'debug' },
+          { path: 'spec.replicas', value: 3 },
+          { path: 'spec.template.spec.containers[0].image', value: 'busybox' },
+          { path: 'spec.template.spec.containers[0].command[0]', value: '/bin/sh' },
+          { path: 'spec.template.spec.containers[0].args[0]', value: '-c' },
+        ],
+        description: 'YAML 매니페스트로 busybox Deployment 생성',
+      },
+    ],
+    hints: [
+      { text: 'busybox 컨테이너는 기본적으로 즉시 종료됩니다. command와 args로 무한 루프를 설정하여 실행 상태를 유지하세요.', penalty: 0.1 },
+      { text: 'command: ["/bin/sh"], args: ["-c", "while true; do sleep 10; done"]을 사용하면 컨테이너가 계속 실행됩니다.', penalty: 0.2 },
+      { text: 'kubectl create ns debug\n---\napiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: debug-deployment\n  namespace: debug\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: debug-deployment\n  template:\n    metadata:\n      labels:\n        app: debug-deployment\n    spec:\n      containers:\n      - name: busybox\n        image: busybox\n        command: ["/bin/sh"]\n        args: ["-c", "while true; do sleep 10; done"]', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Namespace "debug" exists',
+        command: 'kubectl get ns debug -o jsonpath="{.metadata.name}"',
+        expected: 'debug',
+      },
+      {
+        description: 'Deployment "debug-deployment" exists in debug',
+        command: 'kubectl get deploy debug-deployment -n debug -o jsonpath="{.metadata.name}"',
+        expected: 'debug-deployment',
+      },
+      {
+        description: 'Image is busybox (not busyboxx)',
+        command: 'kubectl get deploy debug-deployment -n debug -o jsonpath="{.spec.template.spec.containers[0].image}"',
+        expected: 'busybox',
+      },
+      {
+        description: 'All 3 replicas are ready',
+        command: 'kubectl get deploy debug-deployment -n debug -o jsonpath="{.status.readyReplicas}"',
+        expected: '3',
+      },
+    ],
+  },
+  {
+    id: 'dp-8',
+    category: 'deployment',
+    difficulty: 'hard',
+    title: 'Deployment Autoscale (HPA)',
+    scenario:
+      'Deployment를 생성하고 Horizontal Pod Autoscaler(HPA)를 설정하세요.\n\n- "web-autoscale"이라는 Deployment를 생성하세요: nginx 이미지, 레플리카 2개, 포트 80\n- kubectl autoscale 명령어로 HPA를 설정하세요: 최소 2개, 최대 10개 Pod, CPU 사용률 80% 기준으로 오토스케일링합니다.',
+    expectedAnswers: [
+      {
+        type: 'command',
+        requiredParts: ['create', 'deployment', 'web-autoscale', '--image', 'nginx', '--replicas', '2', '--port', '80'],
+        description: 'kubectl create deployment 명령어로 Deployment 생성',
+      },
+      {
+        type: 'command',
+        requiredParts: ['autoscale', 'deployment', 'web-autoscale', '--min', '2', '--max', '10', '--cpu-percent', '80'],
+        description: 'kubectl autoscale 명령어로 HPA 설정',
+      },
+    ],
+    hints: [
+      { text: 'kubectl autoscale deployment 명령어로 HPA를 생성할 수 있습니다.', penalty: 0.1 },
+      { text: '--min, --max로 Pod 범위를, --cpu-percent로 목표 CPU 사용률을 지정합니다.', penalty: 0.2 },
+      { text: 'kubectl create deployment web-autoscale --image=nginx --replicas=2 --port=80\nkubectl autoscale deployment web-autoscale --min=2 --max=10 --cpu-percent=80', penalty: 0.3 },
+    ],
+    labVerification: [
+      {
+        description: 'Deployment "web-autoscale" exists',
+        command: 'kubectl get deploy web-autoscale -o jsonpath="{.metadata.name}"',
+        expected: 'web-autoscale',
+      },
+      {
+        description: 'HPA "web-autoscale" exists',
+        command: 'kubectl get hpa web-autoscale -o jsonpath="{.metadata.name}"',
+        expected: 'web-autoscale',
+      },
+      {
+        description: 'HPA min replicas is 2',
+        command: 'kubectl get hpa web-autoscale -o jsonpath="{.spec.minReplicas}"',
+        expected: '2',
+      },
+      {
+        description: 'HPA max replicas is 10',
+        command: 'kubectl get hpa web-autoscale -o jsonpath="{.spec.maxReplicas}"',
+        expected: '10',
+      },
+    ],
+  },
 ];
