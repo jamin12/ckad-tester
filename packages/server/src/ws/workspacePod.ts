@@ -72,6 +72,7 @@ export async function createWorkspacePod(
               + ' && (apt-get install -y -qq --no-install-recommends vim curl jq || apt-get install -y -qq --no-install-recommends vim-tiny curl jq)'
               + ' && rm -rf /var/lib/apt/lists/* /var/cache/apt/*'
               + ' && ln -sf "$(command -v vim)" /usr/bin/vi'
+              + ' && echo \'export HISTFILE=/tmp/.cmd_history; export PROMPT_COMMAND="history -a"\' >> /root/.bashrc'
               + ' && exec sleep infinity',
             ],
             workingDir: '/workspace',
@@ -154,13 +155,15 @@ export async function createWorkspacePod(
   throw new Error('Workspace pod failed to become ready within timeout');
 }
 
-export function deleteWorkspacePod(
+export async function deleteWorkspacePod(
   coreApi: CoreV1Api,
   namespace: string,
   podName: string,
-): void {
+): Promise<void> {
   console.info(`[workspace-pod] deleting pod ${podName} in ${namespace}`);
-  coreApi.deleteNamespacedPod({ name: podName, namespace, gracePeriodSeconds: 0 }).catch(() => {});
+  try {
+    await coreApi.deleteNamespacedPod({ name: podName, namespace, gracePeriodSeconds: 0 });
+  } catch { /* ignore */ }
 }
 
 export function deleteKubeconfigSecret(

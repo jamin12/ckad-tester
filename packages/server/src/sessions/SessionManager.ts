@@ -82,13 +82,15 @@ class SessionManager {
     }
   }
 
-  destroyAll(): void {
+  async destroyAll(): Promise<void> {
+    const tasks: Promise<void>[] = [];
     for (const entry of this.sessions.values()) {
       if (entry.podName) {
-        deleteWorkspacePod(entry.coreApi, entry.namespace, entry.podName);
+        tasks.push(deleteWorkspacePod(entry.coreApi, entry.namespace, entry.podName));
       }
       deleteKubeconfigSecret(entry.coreApi, entry.namespace);
     }
+    await Promise.allSettled(tasks);
     this.sessions.clear();
   }
 }

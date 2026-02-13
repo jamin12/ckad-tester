@@ -22,9 +22,9 @@ export const observabilityQuestions: Question[] = [
     ],
     labVerification: [
       {
-        description: 'Pod "web-server" exists and is running',
-        command: 'kubectl get pod web-server -o jsonpath="{.status.phase}"',
-        expected: 'Running',
+        description: 'Executed kubectl logs command with --tail and -f flags',
+        command: 'grep -cE "kubectl\\s+logs\\s+web-server\\s+.*(--tail|-f)" /tmp/.cmd_history 2>/dev/null || echo 0',
+        expected: '^[1-9]',
       },
     ],
   },
@@ -54,9 +54,9 @@ export const observabilityQuestions: Question[] = [
     ],
     labVerification: [
       {
-        description: 'metrics-server is available',
-        command: 'kubectl top pod -A --no-headers 2>&1 | head -1 | wc -l',
-        expected: '1',
+        description: 'Executed kubectl top pod command with all-namespaces and sort-by flags',
+        command: 'grep -cE "kubectl\\s+top\\s+pod.*(-A|--all-namespaces).*--sort-by" /tmp/.cmd_history 2>/dev/null || echo 0',
+        expected: '^[1-9]',
       },
     ],
   },
@@ -81,9 +81,9 @@ export const observabilityQuestions: Question[] = [
     ],
     labVerification: [
       {
-        description: 'Pod "failing-pod" exists',
-        command: 'kubectl get pod failing-pod -o jsonpath="{.metadata.name}"',
-        expected: 'failing-pod',
+        description: 'Executed kubectl describe pod command',
+        command: 'grep -cE "kubectl\\s+describe\\s+pod\\s+failing-pod" /tmp/.cmd_history 2>/dev/null || echo 0',
+        expected: '^[1-9]',
       },
     ],
   },
@@ -113,14 +113,9 @@ export const observabilityQuestions: Question[] = [
     ],
     labVerification: [
       {
-        description: 'Pod "app-with-sidecar" exists',
-        command: 'kubectl get pod app-with-sidecar -o jsonpath="{.metadata.name}"',
-        expected: 'app-with-sidecar',
-      },
-      {
-        description: 'Container "log-agent" exists',
-        command: 'kubectl get pod app-with-sidecar -o jsonpath="{.spec.containers[1].name}"',
-        expected: 'log-agent',
+        description: 'Executed kubectl logs command with -c flag for log-agent container',
+        command: 'grep -cE "kubectl\\s+logs\\s+app-with-sidecar\\s+.*-c\\s+log-agent.*(--previous|-p)" /tmp/.cmd_history 2>/dev/null || echo 0',
+        expected: '^[1-9]',
       },
     ],
   },
