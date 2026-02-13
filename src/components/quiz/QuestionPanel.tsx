@@ -31,7 +31,7 @@ export function QuestionPanel({ question, hintsRevealed, onRevealHint }: Questio
       {/* Scenario */}
       <div className="mb-4">
         <p
-          className="text-sm leading-relaxed text-text-secondary"
+          className="whitespace-pre-line text-sm leading-relaxed text-text-secondary"
           style={{ overflowWrap: 'break-word' }}
         >
           {question.scenario}
